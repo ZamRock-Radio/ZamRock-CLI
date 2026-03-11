@@ -40,9 +40,10 @@ RECORDING_ACTIVE=false
 INTERACTIVE_MODE=false
 SHOULD_EXIT=false
 CLEANED_UP=false
-TYPEWRITER_MODE=false
-TYPEWRITER_DELAY=0.05  # Adjust this value to change typewriter speed (seconds per line)
+TYPEWRITER_MODE=true
+TYPEWRITER_DELAY=0.05
 FFMPEG_PID=0
+VOLUME=80
 
 strip_ansi() {
     printf '%s' "$1" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
@@ -253,7 +254,7 @@ render_box() {
 
 toggle_typewriter_mode() {
     if $TYPEWRITER_MODE; then
-        TYPEWRITER_MODE=false
+TYPEWRITER_MODE=true
         type_print "${YELLOW}Typewriter mode disabled.${NC}"
     else
         TYPEWRITER_MODE=true
@@ -292,23 +293,23 @@ print_ascii_art() {
     printf "\n"
     printf "\033[1;${colors[0]}m"
     cat << "EOF"
-__________             __________               __
-\____    /____    _____\______   \ ____   ____ |  | __
-  /     /\__  \  /     \|       _//  _ \_/ ___\|  |/ /
- /     /_ / __ \|  Y Y  \    |   (  <_> )  \___|    <
-/_______ (____  /__|_|  /____|_  /\____/ \___  >__|_ \
+ __________             __________               __
+ \____    /____    _____\______   \ ____   ____ |  | __
+   /     /\__  \  /     \|       _//  _ \_/ ___\|  |/ /
+  /     /_ / __ \|  Y Y  \    |   (  <_> )  \___|    <
+ /_______ (____  /__|_|  /____|_  /\____/ \___  >__|_ \
         \/    \/      \/       \/            \/     \/
-       __________             .___.__
-       \______   \_____     __| _/|__| ____
-        |       _/\__  \   / __ | |  |/  _ \
-        |    |   \ / __ \_/ /_/ | |  (  <_> )
-        |____|_  /(____  /\____ | |__|\____/
+        __________             .___.__
+        \______   \_____     __| _/|__| ____
+         |       _/\__  \   / __ | |  |/  _ \
+         |    |   \ / __ \_/ /_/ | |  (  <_> )
+         |____|_  /(____  /\____ | |__|\____/
                \/      \/      \/
-ZamZam for life...
 EOF
-    printf "\033[1;${colors[7]}mVisit us at: https://zamrock.net\n"
+    printf "\033[1;${colors[7]}m"
+    type_print "Visit us at: https://zamrock.net"
     printf "${NC}"  # Reset color
-    echo -e "${YELLOW}ZamRock Radio - The Home of Zambian Rock Music${NC}\n"
+    type_print "ZamRock Radio - The Home of Zambian Rock Music"
 }
 
 print_now_playing_card() {
@@ -893,6 +894,7 @@ show_startup_menu() {
     local menu_items=("Play" "Volume" "Settings" "Help" "Exit")
     local selected=0
     local num_items=${#menu_items[@]}
+    local menu_drawn=false
     
     load_settings
     
@@ -900,68 +902,73 @@ show_startup_menu() {
         rows=$(tput lines 2>/dev/null || echo 24)
         cols=$(tput cols 2>/dev/null || echo 80)
         
-        clear
-        
-        # Get terminal size for centering
-        rows=$(tput lines 2>/dev/null || echo 24)
-        cols=$(tput cols 2>/dev/null || echo 80)
-        
-        # Logo is 53 chars wide, center it
-        logo_col=$(( (cols - 53) / 2 ))
-        [ $logo_col -lt 1 ] && logo_col=1
-        logo_row=1
-        
-        tput cup $logo_row $logo_col
-        echo "__________             __________               __"
-        tput cup $((logo_row + 1)) $logo_col
-        echo '\\____    /____    _____\\______   \\ ____   ____ |  | __'
-        tput cup $((logo_row + 2)) $logo_col
-        echo '  /     /\\__  \\  /     \\|       _//  _ \\_/ __\\|  |/ /'
-        tput cup $((logo_row + 3)) $logo_col
-        echo ' /     /_ / __ \\|  Y Y  \\    |   (  <_> )  \\___|    <'
-        tput cup $((logo_row + 4)) $logo_col
-        echo '/_______ (____  /__|_|  /____|_  /\\____/ \\___  >__|_ \\'
-        tput cup $((logo_row + 5)) $logo_col
-        echo '        \\/    \\/      \\/       \\/            \\/     \\/'
-        
-        tput cup $((logo_row + 7)) $logo_col
-        echo '       __________             .___.__'
-        tput cup $((logo_row + 8)) $logo_col
-        echo '       \\______   \\_____     __| _/|__| ____'
-        tput cup $((logo_row + 9)) $logo_col
-        echo '        |       _/\\__  \\   / __ | |  |/  _ \\'
-        tput cup $((logo_row + 10)) $logo_col
-        echo '        |    |   \\ / __ \\_/ /_/ | |  (  <_> )'
-        tput cup $((logo_row + 11)) $logo_col
-        echo '        |____|_  /(____  /\\____ | |__|\\____\\/'
-        tput cup $((logo_row + 12)) $logo_col
-        echo '               \\/      \\/'
-        
-        # Center tagline
-        tagline_col=$(( (cols - 17) / 2 ))
-        [ $tagline_col -lt 1 ] && tagline_col=1
-        tput cup $((logo_row + 15)) $tagline_col
-        echo "ZamZam for life..."
-        
-        # Center website
-        website_col=$(( (cols - 19) / 2 ))
-        [ $website_col -lt 1 ] && website_col=1
-        tput cup $((logo_row + 16)) $website_col
-        echo "https://zamrock.net"
-        
-        # Center menu
-        menu_start=$((logo_row + 19))
-        menu_col=$(( (cols - 8) / 2 ))
-        [ $menu_col -lt 1 ] && menu_col=1
-        
-        for i in "${!menu_items[@]}"; do
-            tput cup $((menu_start + i)) $menu_col
-            if [ $i -eq $selected ]; then
-                printf "${GREEN}> ${menu_items[i]}${NC}"
-            else
-                printf "  ${menu_items[i]}"
-            fi
-        done
+        # Only redraw menu when needed
+        if [ "$menu_drawn" = false ]; then
+            clear
+            
+            # Get terminal size for centering
+            rows=$(tput lines 2>/dev/null || echo 24)
+            cols=$(tput cols 2>/dev/null || echo 80)
+            
+            # Logo is 53 chars wide, center it
+            logo_col=$(( (cols - 53) / 2 ))
+            [ $logo_col -lt 1 ] && logo_col=1
+            logo_row=1
+            
+            tput cup $logo_row $logo_col
+            type_print "__________             __________               __"
+            tput cup $((logo_row + 1)) $logo_col
+            type_print '\\____    /____    _____\\______   \\ ____   ____ |  | __'
+            tput cup $((logo_row + 2)) $logo_col
+            type_print '  /     /\\__  \\  /     \\|       _//  _ \\_/ __\\|  |/ /'
+            tput cup $((logo_row + 3)) $logo_col
+            type_print ' /     /_ / __ \\|  Y Y  \\    |   (  <_> )  \\___|    <'
+            tput cup $((logo_row + 4)) $logo_col
+            type_print '/_______ (____  /__|_|  /____|_  /\\____/ \\___  >__|_ \\'
+            tput cup $((logo_row + 5)) $logo_col
+            type_print '        \\/    \\/      \\/       \\/            \\/     \\/'
+            
+            tput cup $((logo_row + 7)) $logo_col
+            type_print '       __________             .___.__'
+            tput cup $((logo_row + 8)) $logo_col
+            type_print '       \\______   \\_____     __| _/|__| ____'
+            tput cup $((logo_row + 9)) $logo_col
+            type_print '        |       _/\\__  \\   / __ | |  |/  _ \\'
+            tput cup $((logo_row + 10)) $logo_col
+            type_print '        |    |   \\ / __ \\_/ /_/ | |  (  <_> )'
+            tput cup $((logo_row + 11)) $logo_col
+            type_print '        |____|_  /(____  /\\____ | |__|\\____\\/'
+            tput cup $((logo_row + 12)) $logo_col
+            type_print '               \\/      \\/'
+            
+            # Center tagline
+            tagline_col=$(( (cols - 17) / 2 ))
+            [ $tagline_col -lt 1 ] && tagline_col=1
+            tput cup $((logo_row + 15)) $tagline_col
+            type_print "ZamZam for life..."
+            
+            # Center website
+            website_col=$(( (cols - 19) / 2 ))
+            [ $website_col -lt 1 ] && website_col=1
+            tput cup $((logo_row + 16)) $website_col
+            type_print "https://zamrock.net"
+            
+            # Center menu
+            menu_start=$((logo_row + 19))
+            menu_col=$(( (cols - 8) / 2 ))
+            [ $menu_col -lt 1 ] && menu_col=1
+            
+            for i in "${!menu_items[@]}"; do
+                tput cup $((menu_start + i)) $menu_col
+                if [ $i -eq $selected ]; then
+                    printf "${GREEN}> ${menu_items[i]}${NC}"
+                else
+                    printf "  ${menu_items[i]}"
+                fi
+            done
+            
+            menu_drawn=true
+        fi
         
         read -rsn1 key
         
@@ -977,10 +984,10 @@ show_startup_menu() {
             "")
                 clear
                 case $selected in
-                    0) return 0 ;;
-                    1) show_volume_menu ;;
-                    2) show_settings_menu ;;
-                    3) show_startup_help ;;
+                    0) menu_drawn=false; return 0 ;;
+                    1) show_volume_menu; menu_drawn=false ;;
+                    2) show_settings_menu; menu_drawn=false ;;
+                    3) show_startup_help; menu_drawn=false ;;
                     4) 
                         tput cnorm
                         echo -e "${YELLOW}Thank you for listening!${NC}"
@@ -988,8 +995,31 @@ show_startup_menu() {
                         ;;
                 esac
                 ;;
-            "A"|"a") [ $selected -gt 0 ] && selected=$((selected - 1)) ;;
-            "B"|"b") [ $selected -lt $((num_items - 1)) ] && selected=$((selected + 1)) ;;
+            "A"|"a") 
+                if [ $selected -gt 0 ]; then
+                    selected=$((selected - 1))
+                    # Update just the selection lines
+                    tput cup $((menu_start + selected + 1)) $menu_col
+                    printf "  ${menu_items[$selected]}"
+                    tput cup $((menu_start + selected)) $menu_col
+                    printf "${GREEN}> ${menu_items[$selected]}${NC}"
+                fi
+                ;;
+            "B"|"b") 
+                if [ $selected -lt $((num_items - 1)) ]; then
+                    selected=$((selected + 1))
+                    # Update just the selection lines
+                    tput cup $((menu_start + selected - 1)) $menu_col
+                    printf "  ${menu_items[$selected - 1]}"
+                    tput cup $((menu_start + selected)) $menu_col
+                    printf "${GREEN}> ${menu_items[$selected]}${NC}"
+                fi
+                ;;
+            $'\e')  # Escape key - same as back
+                tput cnorm
+                echo -e "${YELLOW}Thank you for listening!${NC}"
+                exit 0
+                ;;
             "q"|"Q") 
                 tput cnorm
                 echo -e "${YELLOW}Thank you for listening!${NC}"
@@ -1022,13 +1052,13 @@ show_volume_menu() {
         printf "]${NC}"
         
         tput cup $((rows / 2 + 4)) $((cols / 2 - 14))
-        echo "Arrow Up/Down: Adjust"
+        echo "+/- or 0-9: Adjust"
         tput cup $((rows / 2 + 5)) $((cols / 2 - 10))
-        echo "s: Save | q: Back"
+        echo "s: Save | b: Back"
         
         flush_input
         read -rsn1 key
-        # Handle arrow keys (escape sequences: \e[A, \e[B)
+        # Handle arrow keys (consume escape sequences)
         if [ "$key" = $'\e' ]; then
             read -rsn1 -t 0.1 key
             if [ "$key" = "[" ]; then
@@ -1039,13 +1069,16 @@ show_volume_menu() {
         case "$key" in
             "A") [ $VOLUME -lt 100 ] && VOLUME=$((VOLUME + 5)) ;;
             "B") [ $VOLUME -gt 0 ] && VOLUME=$((VOLUME - 5)) ;;
+            "+") [ $VOLUME -lt 100 ] && VOLUME=$((VOLUME + 5)) ;;
+            "-") [ $VOLUME -gt 0 ] && VOLUME=$((VOLUME - 5)) ;;
+            [0-9]) VOLUME=$((key * 10)) ;;
             "s"|"S") 
                 save_settings
                 tput cup $((rows / 2 + 6)) $((cols / 2 - 10))
                 echo -e "${GREEN}Settings saved!${NC}"
                 sleep 1
                 ;;
-            ""|"q"|"Q") return ;;
+            ""|"b"|"B"|$'\e') return ;;
         esac
     done
 }
@@ -1085,7 +1118,7 @@ show_settings_menu() {
         tput cup $((rows / 2 + 5)) $((cols / 2 - 14))
         echo "w: Toggle Typewriter"
         tput cup $((rows / 2 + 6)) $((cols / 2 - 10))
-        echo "q: Back to Menu"
+        echo "b: Back to Menu"
         
         flush_input
         read -rsn1 key
@@ -1109,13 +1142,13 @@ show_settings_menu() {
             "v"|"V") show_volume_menu ;;
             "w"|"W") 
                 if $TYPEWRITER_MODE; then
-TYPEWRITER_MODE=true
+                    TYPEWRITER_MODE=false
                 else
                     TYPEWRITER_MODE=true
                 fi
                 save_settings
                 ;;
-            ""|"q"|"Q") return ;;
+            ""|"b"|"B"|$'\e') return ;;
         esac
     done
 }
@@ -1139,7 +1172,7 @@ show_startup_help() {
     echo -e "${CYAN}╔${horiz}╗${NC}"
     echo -e "${CYAN}║${NC}  ↑/↓   - Navigate"
     echo -e "${CYAN}║${NC}  Enter  - Select"
-    echo -e "${CYAN}║${NC}  q     - Quit"
+    echo -e "${CYAN}║${NC}  b/Esc - Back"
     echo -e "${CYAN}╠${horiz}╣${NC}"
     echo -e "${CYAN}║${NC}  Play    - Start radio"
     echo -e "${CYAN}║${NC}  Volume  - Adjust"
@@ -1150,6 +1183,7 @@ show_startup_help() {
     tput cup $((rows - 3)) $((cols / 2 - 15))
     echo "Press any key to continue..."
     
+    flush_input
     read -rsn1
 }
 
@@ -1174,9 +1208,12 @@ echo "Playing audio stream..."
 print_ascii_art
 LAST_ASCII_TIME=$(date +%s)
 
-# Redirect ffplay output to a temporary file
+# Set default volume if not set
+[ -z "$VOLUME" ] && VOLUME=80
+
+# Start playback with ffplay
 TMP_LOG=$(mktemp)
-ffplay -nodisp -autoexit "$AUDIO_URL" -loglevel info 2> "$TMP_LOG" &
+ffplay -nodisp -autoexit "$AUDIO_URL" -loglevel info -volume $VOLUME 2> "$TMP_LOG" &
 PID=$!
 
 # Print instructions
@@ -1291,6 +1328,7 @@ show_help() {
     echo -e "${CYAN}║${NC}  i  ZamRock info & links"
     echo -e "${CYAN}║${NC}  l  Search lyrics"
     echo -e "${CYAN}║${NC}  n  Show logo & now playing"
+    echo -e "${CYAN}║${NC}  m  Return to menu"
     echo -e "${CYAN}║${NC}  t  Toggle typewriter ($typewriter_label)"
     echo -e "${CYAN}║${NC}  h  This help menu"
     echo -e "${CYAN}║${NC}  q  Quit"
@@ -1349,11 +1387,13 @@ cleanup() {
         return
     fi
     CLEANED_UP=true
+    
     kill $PID 2>/dev/null
     [ -n "$TIMER_PID" ] && kill $TIMER_PID 2>/dev/null
     [ -n "$RECORDING_PID" ] && kill $RECORDING_PID 2>/dev/null
     [ -n "$FFMPEG_PID" ] && kill $FFMPEG_PID 2>/dev/null
     rm -f "$TMP_LOG"
+    tput cnorm
     echo -e "${YELLOW}Playback finished.${NC}"
 }
 
@@ -1412,12 +1452,12 @@ while kill -0 $PID 2>/dev/null; do
         continue
     fi
     
-    # Handle arrow keys (escape sequences: \e[A, \e[B, \e[C, \e[D)
+    # Handle arrow keys (escape sequences: \e[A=up, \e[B=down, \e[C=right, \e[D=left)
     if [ "$key" = $'\e' ]; then
         read -rsn1 -t 0.1 key
         if [ "$key" = "[" ]; then
             read -rsn1 -t 0.1 key
-            # Arrow key detected, ignore for now (could map to prev/next track later)
+            # Arrow keys ignored - use Settings menu to change volume
             continue
         else
             continue
@@ -1492,6 +1532,9 @@ while kill -0 $PID 2>/dev/null; do
             ;;
         "n")
             show_logo_and_now_playing
+            ;;
+        "m"|"M")
+            show_startup_menu
             ;;
         "q")
             echo
