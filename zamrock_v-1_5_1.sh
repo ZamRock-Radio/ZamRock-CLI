@@ -117,25 +117,135 @@ render_box_line() {
     printf "%b\n" "${CYAN}║ ${NC}${text}${spaces}${CYAN} ║${NC}"
 }
 
+wrap_text() {
+    local text="$1"
+    local max_width=$2
+    local plain=$(strip_ansi "$text")
+    local len=${#plain}
+    
+    if [ $len -le $max_width ]; then
+        echo "$text"
+        return
+    fi
+    
+    local result=""
+    local remaining="$text"
+    local word ansi_buffer=""
+    local in_ansi=false
+    
+    while [ ${#remaining} -gt 0 ]; do
+        local plain_remaining=$(strip_ansi "$remaining")
+        local plain_len=${#plain_remaining}
+        
+        if [ $plain_len -le $max_width ]; then
+            if [ -n "$result" ]; then
+                result+=$'\n'
+            fi
+            result+="$remaining"
+            break
+        fi
+        
+        local line=""
+        local line_plain=""
+        remaining=""
+        
+        for ((i=0; i<${#remaining}; i++)); do
+            local char="${remaining:i:1}"
+            
+            if [[ "$char" == $'\033' ]]; then
+                ansi_buffer="$char"
+                local seq="$char"
+                local j=$((i+1))
+                while [ $j -lt ${#remaining} ]; do
+                    local next="${remaining:j:1}"
+                    seq+="$next"
+                    if [[ "$next" =~ [A-Za-z] ]]; then
+                        break
+                    fi
+                    j=$((j+1))
+                done
+                ansi_buffer="$seq"
+                line+="$seq"
+                continue
+            fi
+            
+            line+="$char"
+            local test_line_plain=$(strip_ansi "$line")
+            
+            if [ ${#test_line_plain} -gt $max_width ]; then
+                line="${line:0:-1}"
+                remaining="${remaining:i}"
+                break
+            fi
+        done
+        
+        if [ -n "$result" ]; then
+            result+=$'\n'
+        fi
+        result+="$line"
+    done
+    
+    printf '%s' "$result"
+}
+
 render_box() {
     local title="$1"
     shift
     local content=("$@")
-    local lines=("$title" "${content[@]}")
-    local max_len=0
-    local plain_line
-    for line in "${lines[@]}"; do
-        plain_line=$(strip_ansi "$line")
-        if [ ${#plain_line} -gt $max_len ]; then
-            max_len=${#plain_line}
+    
+    local term_cols=$(tput cols 2>/dev/null || echo 80)
+    local max_allowed=$((term_cols - 4))
+    [ $max_allowed -lt 40 ] && max_allowed=40
+    [ $max_allowed -gt 76 ] && max_allowed=76
+    
+    local wrapped_lines=()
+    
+    for line in "${content[@]}"; do
+        local plain=$(strip_ansi "$line")
+        if [ ${#plain} -gt $max_allowed ]; then
+            local words=()
+            read -ra words <<< "$line"
+            local current=""
+            for word in "${words[@]}"; do
+                local test_line="$current $word"
+                if [ -z "$current" ]; then
+                    test_line="$word"
+                fi
+                local test_plain=$(strip_ansi "$test_line")
+                if [ ${#test_plain} -le $max_allowed ]; then
+                    current="$test_line"
+                else
+                    if [ -n "$current" ]; then
+                        wrapped_lines+=("$current")
+                    fi
+                    current="$word"
+                fi
+            done
+            [ -n "$current" ] && wrapped_lines+=("$current")
+        else
+            wrapped_lines+=("$line")
         fi
     done
-    local inner_width=$((max_len + 2))
+    
+    local max_len=0
+    local plain_line
+    local all_lines=("$title" "${wrapped_lines[@]}")
+    for line in "${all_lines[@]}"; do
+        plain_line=$(strip_ansi "$line")
+        local len=${#plain_line}
+        if [ $len -gt $max_len ]; then
+            max_len=$len
+        fi
+    done
+    
+    [ $max_len -gt $max_allowed ] && max_len=$max_allowed
+    
+    local inner_width=$max_len
     local border=$(repeat_char "═" $inner_width)
     printf "%b\n" "${CYAN}╔${border}╗${NC}"
     render_box_line "$title" "$max_len"
     printf "%b\n" "${CYAN}╠${border}╣${NC}"
-    for line in "${content[@]}"; do
+    for line in "${wrapped_lines[@]}"; do
         render_box_line "$line" "$max_len"
     done
     printf "%b\n" "${CYAN}╚${border}╝${NC}"
@@ -213,22 +323,49 @@ print_now_playing_card() {
         return
     fi
 
-    local title="${YELLOW}ZamRock Radio - Now Playing${NC}"
-    local lines=()
-    lines+=("${YELLOW}🎵  Title:${NC}  ${song_title}")
-    lines+=("${YELLOW}🎤  Artist:${NC} ${artist}")
+    # Get terminal width dynamically like bashsimplecurses
+    local term_width=$(tput cols 2>/dev/null || echo 80)
+    [ $term_width -lt 40 ] && term_width=40
+    [ $term_width -gt 100 ] && term_width=100
+    local inner=$((term_width - 2))
+    
+    # Build border strings - works with any terminal
+    local top_border="╔"
+    local bot_border="╚"
+    local mid_border="╠"
+    local left_border="║"
+    local right_border="║"
+    local top_bottom="═"
+    local mid_horiz="═"
+    local mid_vert="╬"
+    
+    # Create the horizontal lines
+    local horiz=""
+    local i
+    for ((i=0; i<inner; i++)); do
+        horiz="${horiz}${top_bottom}"
+    done
+
+    echo ""
+    echo -e "${CYAN}${top_border}${horiz}${right_border}${NC}"
+    echo -e "${CYAN}${left_border}${NC}  ${YELLOW}ZamRock Radio - Now Playing${NC}"
+    echo -e "${CYAN}${mid_border}${horiz}${mid_vert}${NC}"
+    echo -e "${CYAN}${left_border}${NC}  Title:   ${song_title}"
+    echo -e "${CYAN}${left_border}${NC}  Artist:  ${artist}"
     if [ "$album" != "Unknown Album" ]; then
-        lines+=("${YELLOW}💿  Album:${NC}  ${album}")
+        echo -e "${CYAN}${left_border}${NC}  Album:   ${album}"
     fi
     if [ "$playlist" != "Unknown Collection" ]; then
-        lines+=("${YELLOW}📋  Playlist:${NC} ${playlist}")
+        echo -e "${CYAN}${left_border}${NC}  Playlist: ${playlist}"
     fi
+    local dur_str
     if [[ "$duration" =~ ^[0-9]+$ ]] && [ "$duration" -gt 0 ]; then
-        lines+=("${YELLOW}⏱️   Duration:${NC} $(format_duration $duration)")
+        dur_str=$(format_duration $duration)
     else
-        lines+=("${YELLOW}⏱️   Duration:${NC} Unknown")
+        dur_str="Unknown"
     fi
-    render_box "$title" "${lines[@]}"
+    echo -e "${CYAN}${left_border}${NC}  Duration: ${dur_str}"
+    echo -e "${CYAN}${bot_border}${horiz}${right_border}${NC}"
 }
 
 show_logo_and_now_playing() {
@@ -808,39 +945,51 @@ display_track_info() {
 echo -e "${CYAN}Loading track information...${NC}"
 # Command help function
 show_help() {
-    # Clear input buffer before reading
-    flush_input
-    clear
+    local remaining=$RAMEN_TIMER_DURATION
     local timer_status
-    if $TIMER_RUNNING; then
-        local remaining=$((TIMER_DURATION - ($(date +%s) - TIMER_START)))
+    if [ $remaining -gt 0 ]; then
         [ $remaining -lt 0 ] && remaining=0
-        timer_status="${PURPLE}Running - $(format_duration $remaining) left${NC}"
+        timer_status="Running - $(format_duration $remaining) left"
     else
         timer_status="Not running"
     fi
     local typewriter_label
     if $TYPEWRITER_MODE; then
-        typewriter_label="${GREEN}ON${NC}"
+        typewriter_label="ON"
     else
-        typewriter_label="${RED}OFF${NC}"
+        typewriter_label="OFF"
     fi
-    local lines=(
-        "${YELLOW}${GREEN}p${NC}  - Pause or unpause the audio stream"
-        "${YELLOW}${GREEN}r${NC}  - Start or cancel the Ramen Noodle Timer"
-        "${YELLOW}${GREEN}a${NC}  - Archive the audio stream (select duration)"
-        "${YELLOW}${GREEN}i${NC}  - Show ZamRock information and social links"
-        "${YELLOW}${GREEN}l${NC}  - Search for lyrics of current track"
-        "${YELLOW}${GREEN}n${NC}  - Show the logo and now playing info"
-        "${YELLOW}${GREEN}t${NC}  - Toggle typewriter effect (${typewriter_label})"
-        "${YELLOW}${GREEN}h${NC}  - Show this help menu"
-        "${YELLOW}${GREEN}q${NC}  - Quit the script"
-        ""
-        "${YELLOW}🔊 Now Playing:${NC} ${LAST_STREAM_TITLE:-Unknown Track}"
-        "${YELLOW}🎤 Artist:${NC} ${LAST_ARTIST:-Unknown Artist}"
-        "${YELLOW}⏱️  Timer:${NC} ${timer_status}"
-    )
-    render_box "${YELLOW}ZamRock CLI - Help Menu${NC}" "${lines[@]}"
+
+    local term_width=$(tput cols 2>/dev/null || echo 80)
+    [ $term_width -lt 40 ] && term_width=40
+    [ $term_width -gt 100 ] && term_width=100
+    local inner=$((term_width - 2))
+    
+    local horiz=""
+    local i
+    for ((i=0; i<inner; i++)); do
+        horiz="${horiz}─"
+    done
+
+    echo ""
+    echo -e "${CYAN}╔${horiz}╗${NC}"
+    echo -e "${CYAN}║${NC}  ${YELLOW}ZamRock CLI - Help Menu${NC}"
+    echo -e "${CYAN}╠${horiz}╣${NC}"
+    echo -e "${CYAN}║${NC}  p  Pause/unpause stream"
+    echo -e "${CYAN}║${NC}  r  Ramen Noodle Timer"
+    echo -e "${CYAN}║${NC}  a  Archive stream"
+    echo -e "${CYAN}║${NC}  i  ZamRock info & links"
+    echo -e "${CYAN}║${NC}  l  Search lyrics"
+    echo -e "${CYAN}║${NC}  n  Show logo & now playing"
+    echo -e "${CYAN}║${NC}  t  Toggle typewriter ($typewriter_label)"
+    echo -e "${CYAN}║${NC}  h  This help menu"
+    echo -e "${CYAN}║${NC}  q  Quit"
+    echo -e "${CYAN}╠${horiz}╣${NC}"
+    echo -e "${CYAN}║${NC}  Now Playing: ${LAST_STREAM_TITLE:-Unknown Track}"
+    echo -e "${CYAN}║${NC}  Artist:     ${LAST_ARTIST:-Unknown Artist}"
+    echo -e "${CYAN}║${NC}  Timer:      $timer_status"
+    echo -e "${CYAN}╚${horiz}╝${NC}"
+    
     type_print "${YELLOW}Press any key to return to the player...${NC}"
     read -n 1 -s
     NO_CLEAR=true
@@ -849,22 +998,35 @@ show_help() {
 
 # Function to display information about ZamRock
 show_info() {
-    # Clear input buffer before reading
     flush_input
-    clear
-    local lines=(
-        "${YELLOW}🌐 Website:${NC}  ${GREEN}https://zamrock.net${NC}"
-        "${YELLOW}💬 Matrix:${NC}  ${GREEN}https://matrix.to/#/#zamrock:unredacted.org${NC}"
-        "${YELLOW}🐘 Mastodon:${NC} ${GREEN}https://musicworld.social/@ZamRock${NC}"
-        "${YELLOW}🔵 BlueSky:${NC}  ${GREEN}https://bsky.app/profile/zamrock.net${NC}"
-        "${YELLOW}🎮 Discord:${NC}  ${GREEN}https://discord.gg/TGNSc9kTjR${NC}"
-        "${YELLOW}💬 Revolt:${NC}   ${GREEN}https://stt.gg/CsjKzYWm${NC}"
-        ""
-        "${YELLOW}🔊 Now Playing:${NC} ${LAST_STREAM_TITLE:-Unknown Track}"
-        "${YELLOW}🎤 Artist:${NC} ${LAST_ARTIST:-Unknown Artist}"
-        "${YELLOW}💿 Album:${NC} ${LAST_ALBUM:-Unknown Album}"
-    )
-    render_box "${YELLOW}ZamRock Radio - Connect With Us${NC}" "${lines[@]}"
+    
+    local term_width=$(tput cols 2>/dev/null || echo 80)
+    [ $term_width -lt 40 ] && term_width=40
+    [ $term_width -gt 100 ] && term_width=100
+    local inner=$((term_width - 2))
+    
+    local horiz=""
+    local i
+    for ((i=0; i<inner; i++)); do
+        horiz="${horiz}─"
+    done
+
+    echo ""
+    echo -e "${CYAN}╔${horiz}╗${NC}"
+    echo -e "${CYAN}║${NC}  ${YELLOW}ZamRock Radio - Connect With Us${NC}"
+    echo -e "${CYAN}╠${horiz}╣${NC}"
+    echo -e "${CYAN}║${NC}  Website:   https://zamrock.net"
+    echo -e "${CYAN}║${NC}  Matrix:    https://matrix.to/#/#zamrock:unredacted.org"
+    echo -e "${CYAN}║${NC}  Mastodon:  https://musicworld.social/@ZamRock"
+    echo -e "${CYAN}║${NC}  BlueSky:   https://bsky.app/profile/zamrock.net"
+    echo -e "${CYAN}║${NC}  Discord:   https://discord.gg/TGNSc9kTjR"
+    echo -e "${CYAN}║${NC}  Revolt:    https://stt.gg/CsjKzYWm"
+    echo -e "${CYAN}╠${horiz}╣${NC}"
+    echo -e "${CYAN}║${NC}  Now Playing: ${LAST_STREAM_TITLE:-Unknown Track}"
+    echo -e "${CYAN}║${NC}  Artist:     ${LAST_ARTIST:-Unknown Artist}"
+    echo -e "${CYAN}║${NC}  Album:      ${LAST_ALBUM:-Unknown Album}"
+    echo -e "${CYAN}╚${horiz}╝${NC}"
+    
     type_print "${YELLOW}Press any key to return to the player...${NC}"
     read -n 1 -s
     flush_input
