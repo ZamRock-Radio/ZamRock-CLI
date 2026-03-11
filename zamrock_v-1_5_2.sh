@@ -41,7 +41,7 @@ INTERACTIVE_MODE=false
 SHOULD_EXIT=false
 CLEANED_UP=false
 TYPEWRITER_MODE=true
-TYPEWRITER_DELAY=0.05
+TYPEWRITER_DELAY=0.03
 FFMPEG_PID=0
 VOLUME=80
 
@@ -60,11 +60,13 @@ flush_input() {
 type_print() {
     local text="$1"
     local newline="${2:-true}"
+    local custom_delay="${3:-}"  # Optional custom delay
     local parsed
     printf -v parsed "%b" "$text"
     if $TYPEWRITER_MODE; then
         local i=0
         local len=${#parsed}
+        local delay="${custom_delay:-$TYPEWRITER_DELAY}"
         while [ $i -lt $len ]; do
             local char="${parsed:i:1}"
             if [[ "$char" == $'\033' ]]; then
@@ -82,7 +84,7 @@ type_print() {
                 continue
             fi
             printf "%s" "$char"
-            sleep "$TYPEWRITER_DELAY"
+            sleep "$delay"
             i=$((i+1))
         done
         if [ "$newline" = "true" ]; then
@@ -915,53 +917,59 @@ show_startup_menu() {
             [ $logo_col -lt 1 ] && logo_col=1
             logo_row=1
             
-            tput cup $logo_row $logo_col
-            type_print "__________             __________               __"
-            tput cup $((logo_row + 1)) $logo_col
-            type_print '\\____    /____    _____\\______   \\ ____   ____ |  | __'
-            tput cup $((logo_row + 2)) $logo_col
-            type_print '  /     /\\__  \\  /     \\|       _//  _ \\_/ __\\|  |/ /'
-            tput cup $((logo_row + 3)) $logo_col
-            type_print ' /     /_ / __ \\|  Y Y  \\    |   (  <_> )  \\___|    <'
-            tput cup $((logo_row + 4)) $logo_col
-            type_print '/_______ (____  /__|_|  /____|_  /\\____/ \\___  >__|_ \\'
-            tput cup $((logo_row + 5)) $logo_col
-            type_print '        \\/    \\/      \\/       \\/            \\/     \\/'
-            
-            tput cup $((logo_row + 7)) $logo_col
-            type_print '       __________             .___.__'
-            tput cup $((logo_row + 8)) $logo_col
-            type_print '       \\______   \\_____     __| _/|__| ____'
-            tput cup $((logo_row + 9)) $logo_col
-            type_print '        |       _/\\__  \\   / __ | |  |/  _ \\'
-            tput cup $((logo_row + 10)) $logo_col
-            type_print '        |    |   \\ / __ \\_/ /_/ | |  (  <_> )'
-            tput cup $((logo_row + 11)) $logo_col
-            type_print '        |____|_  /(____  /\\____ | |__|\\____\\/'
-            tput cup $((logo_row + 12)) $logo_col
-            type_print '               \\/      \\/'
-            
-            # Center tagline
+            # Calculate positions
             tagline_col=$(( (cols - 17) / 2 ))
             [ $tagline_col -lt 1 ] && tagline_col=1
-            tput cup $((logo_row + 15)) $tagline_col
-            type_print "ZamZam for life..."
+            tagline_row=16
             
-            # Center website
-            website_col=$(( (cols - 19) / 2 ))
-            [ $website_col -lt 1 ] && website_col=1
-            tput cup $((logo_row + 16)) $website_col
-            type_print "https://zamrock.net"
-            
-            # Center menu
-            menu_start=$((logo_row + 19))
+            menu_start=20
             menu_col=$(( (cols - 8) / 2 ))
             [ $menu_col -lt 1 ] && menu_col=1
             
+            website_col=$(( (cols - 19) / 2 ))
+            [ $website_col -lt 1 ] && website_col=1
+            website_row=29
+            
+            # 1. Print tagline (slow - 0.08)
+            tput cup $tagline_row $tagline_col
+            type_print "ZamZam for life..." "" 0.08
+            
+            # 2. Print logo (fast - 0.002)
+            tput cup $logo_row $logo_col
+            type_print "__________             __________               __" "" 0.002
+            tput cup $((logo_row + 1)) $logo_col
+            type_print '\\____    /____    _____\\______   \\ ____   ____ |  | __' "" 0.002
+            tput cup $((logo_row + 2)) $logo_col
+            type_print '  /     /\\__  \\  /     \\|       _//  _ \\_/ __\\|  |/ /' "" 0.002
+            tput cup $((logo_row + 3)) $logo_col
+            type_print ' /     /_ / __ \\|  Y Y  \\    |   (  <_> )  \\___|    <' "" 0.002
+            tput cup $((logo_row + 4)) $logo_col
+            type_print '/_______ (____  /__|_|  /____|_  /\\____/ \\___  >__|_ \\' "" 0.002
+            tput cup $((logo_row + 5)) $logo_col
+            type_print '        \\/    \\/      \\/       \\/            \\/     \\/' "" 0.002
+            
+            tput cup $((logo_row + 7)) $logo_col
+            type_print '       __________             .___.__' "" 0.002
+            tput cup $((logo_row + 8)) $logo_col
+            type_print '       \\______   \\_____     __| _/|__| ____' "" 0.002
+            tput cup $((logo_row + 9)) $logo_col
+            type_print '        |       _/\\__  \\   / __ | |  |/  _ \\' "" 0.002
+            tput cup $((logo_row + 10)) $logo_col
+            type_print '        |    |   \\ / __ \\_/ /_/ | |  (  <_> )' "" 0.002
+            tput cup $((logo_row + 11)) $logo_col
+            type_print '        |____|_  /(____  /\\____ | |__|\\____\\/' "" 0.002
+            tput cup $((logo_row + 12)) $logo_col
+            type_print '               \\/      \\/' "" 0.002
+            
+            # 3. Print website (normal speed)
+            tput cup $website_row $website_col
+            type_print "https://zamrock.net"
+            
+            # 4. Print menu (normal speed)
             for i in "${!menu_items[@]}"; do
                 tput cup $((menu_start + i)) $menu_col
                 if [ $i -eq $selected ]; then
-                    printf "${GREEN}> ${menu_items[i]}${NC}"
+                    type_print "${GREEN}> ${menu_items[i]}${NC}"
                 else
                     printf "  ${menu_items[i]}"
                 fi
@@ -1318,25 +1326,26 @@ show_help() {
         horiz="${horiz}─"
     done
 
-    echo ""
-    echo -e "${CYAN}╔${horiz}╗${NC}"
-    echo -e "${CYAN}║${NC}  ${YELLOW}ZamRock CLI - Help Menu${NC}"
-    echo -e "${CYAN}╠${horiz}╣${NC}"
-    echo -e "${CYAN}║${NC}  p  Pause/unpause stream"
-    echo -e "${CYAN}║${NC}  r  Ramen Noodle Timer"
-    echo -e "${CYAN}║${NC}  a  Archive stream"
-    echo -e "${CYAN}║${NC}  i  ZamRock info & links"
-    echo -e "${CYAN}║${NC}  l  Search lyrics"
-    echo -e "${CYAN}║${NC}  n  Show logo & now playing"
-    echo -e "${CYAN}║${NC}  m  Return to menu"
-    echo -e "${CYAN}║${NC}  t  Toggle typewriter ($typewriter_label)"
-    echo -e "${CYAN}║${NC}  h  This help menu"
-    echo -e "${CYAN}║${NC}  q  Quit"
-    echo -e "${CYAN}╠${horiz}╣${NC}"
-    echo -e "${CYAN}║${NC}  Now Playing: ${LAST_STREAM_TITLE:-Unknown Track}"
-    echo -e "${CYAN}║${NC}  Artist:     ${LAST_ARTIST:-Unknown Artist}"
-    echo -e "${CYAN}║${NC}  Timer:      $timer_status"
-    echo -e "${CYAN}╚${horiz}╝${NC}"
+    # Print help menu with typewriter (horizontal lines fast)
+    type_print "" 
+    type_print "${CYAN}╔${horiz}╗${NC}" "" 0.002
+    type_print "${CYAN}║${NC}  ${YELLOW}ZamRock CLI - Help Menu${NC}"
+    type_print "${CYAN}╠${horiz}╣${NC}" "" 0.002
+    type_print "${CYAN}║${NC}  p  Pause/unpause stream"
+    type_print "${CYAN}║${NC}  r  Ramen Noodle Timer"
+    type_print "${CYAN}║${NC}  a  Archive stream"
+    type_print "${CYAN}║${NC}  i  ZamRock info & links"
+    type_print "${CYAN}║${NC}  l  Search lyrics"
+    type_print "${CYAN}║${NC}  n  Show logo & now playing"
+    type_print "${CYAN}║${NC}  m  Return to menu"
+    type_print "${CYAN}║${NC}  t  Toggle typewriter ($typewriter_label)"
+    type_print "${CYAN}║${NC}  h  This help menu"
+    type_print "${CYAN}║${NC}  q  Quit"
+    type_print "${CYAN}╠${horiz}╣${NC}" "" 0.002
+    type_print "${CYAN}║${NC}  Now Playing: ${LAST_STREAM_TITLE:-Unknown Track}"
+    type_print "${CYAN}║${NC}  Artist:     ${LAST_ARTIST:-Unknown Artist}"
+    type_print "${CYAN}║${NC}  Timer:      $timer_status"
+    type_print "${CYAN}╚${horiz}╝${NC}" "" 0.002
     
     type_print "${YELLOW}Press any key to return to the player...${NC}"
     flush_input
