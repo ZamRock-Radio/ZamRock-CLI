@@ -858,6 +858,259 @@ record_until_size() {
     trap - INT
 }
 
+# Settings file handling
+SETTINGS_FILE="$SCRIPT_DIR/zamrock_settings.conf"
+
+load_settings() {
+    if [ -f "$SETTINGS_FILE" ]; then
+        source "$SETTINGS_FILE"
+    else
+        VOLUME=80
+        SAVE_SETTINGS=true
+    fi
+}
+
+save_settings() {
+    if [ "$SAVE_SETTINGS" = true ]; then
+        cat > "$SETTINGS_FILE" << EOF
+VOLUME=$VOLUME
+SAVE_SETTINGS=$SAVE_SETTINGS
+EOF
+    fi
+}
+
+# Startup Menu
+show_startup_menu() {
+    # Hide cursor
+    tput civis
+    
+    # Restore cursor on exit
+    trap 'tput cnorm; exit 0' INT TERM
+    
+    local menu_items=("Play" "Volume" "Settings" "Help" "Exit")
+    local selected=0
+    local num_items=${#menu_items[@]}
+    
+    load_settings
+    
+    while true; do
+        rows=$(tput lines 2>/dev/null || echo 24)
+        cols=$(tput cols 2>/dev/null || echo 80)
+        
+        clear
+        
+        # Get terminal size for centering
+        rows=$(tput lines 2>/dev/null || echo 24)
+        cols=$(tput cols 2>/dev/null || echo 80)
+        
+        # Logo is 53 chars wide, center it
+        logo_col=$(( (cols - 53) / 2 ))
+        [ $logo_col -lt 1 ] && logo_col=1
+        logo_row=1
+        
+        tput cup $logo_row $logo_col
+        echo "__________             __________               __"
+        tput cup $((logo_row + 1)) $logo_col
+        echo '\\____    /____    _____\\______   \\ ____   ____ |  | __'
+        tput cup $((logo_row + 2)) $logo_col
+        echo '  /     /\\__  \\  /     \\|       _//  _ \\_/ __\\|  |/ /'
+        tput cup $((logo_row + 3)) $logo_col
+        echo ' /     /_ / __ \\|  Y Y  \\    |   (  <_> )  \\___|    <'
+        tput cup $((logo_row + 4)) $logo_col
+        echo '/_______ (____  /__|_|  /____|_  /\\____/ \\___  >__|_ \\'
+        tput cup $((logo_row + 5)) $logo_col
+        echo '        \\/    \\/      \\/       \\/            \\/     \\/'
+        
+        tput cup $((logo_row + 7)) $logo_col
+        echo '       __________             .___.__'
+        tput cup $((logo_row + 8)) $logo_col
+        echo '       \\______   \\_____     __| _/|__| ____'
+        tput cup $((logo_row + 9)) $logo_col
+        echo '        |       _/\\__  \\   / __ | |  |/  _ \\'
+        tput cup $((logo_row + 10)) $logo_col
+        echo '        |    |   \\ / __ \\_/ /_/ | |  (  <_> )'
+        tput cup $((logo_row + 11)) $logo_col
+        echo '        |____|_  /(____  /\\____ | |__|\\____\\/'
+        tput cup $((logo_row + 12)) $logo_col
+        echo '               \\/      \\/'
+        
+        # Center tagline
+        tagline_col=$(( (cols - 17) / 2 ))
+        [ $tagline_col -lt 1 ] && tagline_col=1
+        tput cup $((logo_row + 15)) $tagline_col
+        echo "ZamZam for life..."
+        
+        # Center website
+        website_col=$(( (cols - 19) / 2 ))
+        [ $website_col -lt 1 ] && website_col=1
+        tput cup $((logo_row + 16)) $website_col
+        echo "https://zamrock.net"
+        
+        # Center menu
+        menu_start=$((logo_row + 19))
+        menu_col=$(( (cols - 8) / 2 ))
+        [ $menu_col -lt 1 ] && menu_col=1
+        
+        for i in "${!menu_items[@]}"; do
+            tput cup $((menu_start + i)) $menu_col
+            if [ $i -eq $selected ]; then
+                printf "${GREEN}> ${menu_items[i]}${NC}"
+            else
+                printf "  ${menu_items[i]}"
+            fi
+        done
+        
+        read -rsn1 key
+        
+        case "$key" in
+            "")
+                clear
+                case $selected in
+                    0) return 0 ;;
+                    1) show_volume_menu ;;
+                    2) show_settings_menu ;;
+                    3) show_startup_help ;;
+                    4) 
+                        tput cnorm
+                        echo -e "${YELLOW}Thank you for listening!${NC}"
+                        exit 0
+                        ;;
+                esac
+                ;;
+            "A"|"a") [ $selected -gt 0 ] && selected=$((selected - 1)) ;;
+            "B"|"b") [ $selected -lt $((num_items - 1)) ] && selected=$((selected + 1)) ;;
+            "q"|"Q") 
+                tput cnorm
+                echo -e "${YELLOW}Thank you for listening!${NC}"
+                exit 0
+                ;;
+        esac
+    done
+}
+
+show_volume_menu() {
+    while true; do
+        rows=$(tput lines 2>/dev/null || echo 24)
+        cols=$(tput cols 2>/dev/null || echo 80)
+        
+        clear
+        tput cup $((rows / 2 - 4)) $((cols / 2 - 10))
+        echo -e "${YELLOW}Volume Control${NC}"
+        
+        tput cup $((rows / 2)) $((cols / 2 - 8))
+        echo "Current: ${VOLUME}%"
+        
+        local bar_len=20
+        local filled=$((VOLUME * bar_len / 100))
+        local empty=$((bar_len - filled))
+        tput cup $((rows / 2 + 2)) $((cols / 2 - bar_len / 2))
+        printf "${GREEN}["
+        printf "%${filled}s" "" | tr ' ' '█'
+        printf "${YELLOW}"
+        printf "%${empty}s" "" | tr ' ' '░'
+        printf "]${NC}"
+        
+        tput cup $((rows / 2 + 4)) $((cols / 2 - 12))
+        echo "↑/↓: Adjust | s: Save | b: Back"
+        
+        read -rsn1 key
+        case "$key" in
+            "A"|"a") [ $VOLUME -lt 100 ] && VOLUME=$((VOLUME + 5)) ;;
+            "B"|"b") [ $VOLUME -gt 0 ] && VOLUME=$((VOLUME - 5)) ;;
+            "s"|"S") 
+                save_settings
+                echo -e "${GREEN}Settings saved!${NC}"
+                sleep 1
+                ;;
+            ""|"b"|"B") return ;;
+            "q"|"Q") exit 0 ;;
+        esac
+    done
+}
+
+show_settings_menu() {
+    while true; do
+        rows=$(tput lines 2>/dev/null || echo 24)
+        cols=$(tput cols 2>/dev/null || echo 80)
+        
+        clear
+        tput cup $((rows / 2 - 6)) $((cols / 2 - 10))
+        echo -e "${YELLOW}Settings${NC}"
+        
+        tput cup $((rows / 2 - 3)) $((cols / 2 - 15))
+        [ "$SAVE_SETTINGS" = true ] && echo -e "Auto-save: ${GREEN}Enabled${NC}" || echo -e "Auto-save: ${RED}Disabled${NC}"
+        
+        tput cup $((rows / 2 - 1)) $((cols / 2 - 12))
+        echo "Volume: ${VOLUME}%"
+        
+        tput cup $((rows / 2 + 2)) $((cols / 2 - 18))
+        echo "t: Toggle Auto-save | v: Volume"
+        tput cup $((rows / 2 + 3)) $((cols / 2 - 10))
+        echo "Enter/b: Back"
+        
+        read -rsn1 key
+        case "$key" in
+            "t"|"T") 
+                if [ "$SAVE_SETTINGS" = true ]; then
+                    SAVE_SETTINGS=false
+                else
+                    SAVE_SETTINGS=true
+                    save_settings
+                fi
+                ;;
+            "v"|"V") show_volume_menu ;;
+            ""|"b"|"B"|"q"|"Q") return ;;
+        esac
+    done
+}
+
+show_startup_help() {
+    rows=$(tput lines 2>/dev/null || echo 24)
+    cols=$(tput cols 2>/dev/null || echo 80)
+    
+    clear
+    local inner=$((cols - 4))
+    local horiz=""
+    local i
+    for ((i=0; i<inner; i++)); do
+        horiz="${horiz}─"
+    done
+    
+    tput cup 2 $((cols / 2 - 12))
+    echo -e "${YELLOW}ZamRock CLI Help${NC}"
+    
+    tput cup 4 2
+    echo -e "${CYAN}╔${horiz}╗${NC}"
+    echo -e "${CYAN}║${NC}  ↑/↓   - Navigate"
+    echo -e "${CYAN}║${NC}  Enter  - Select"
+    echo -e "${CYAN}║${NC}  q     - Quit"
+    echo -e "${CYAN}╠${horiz}╣${NC}"
+    echo -e "${CYAN}║${NC}  Play    - Start radio"
+    echo -e "${CYAN}║${NC}  Volume  - Adjust"
+    echo -e "${CYAN}║${NC}  Settings - Configure"
+    echo -e "${CYAN}║${NC}  Help    - This help"
+    echo -e "${CYAN}╚${horiz}╝${NC}"
+    
+    tput cup $((rows - 3)) $((cols / 2 - 15))
+    echo "Press any key to continue..."
+    
+    read -rsn1
+}
+
+# Show startup menu and get choice
+show_startup_menu
+menu_choice=$?
+
+# menu_choice: 0=Play, 1=Volume, 2=Settings, 3=Help, 4=Exit
+if [ $menu_choice -ne 0 ]; then
+    tput cnorm
+    # If not Play, exit (Exit was handled in menu)
+    exit 0
+fi
+
+# User selected Play - restore cursor and continue to audio
+tput cnorm
+
 # Start playing audio in the background
 echo "Playing audio stream..."
 
