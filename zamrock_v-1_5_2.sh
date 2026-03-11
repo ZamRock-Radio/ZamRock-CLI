@@ -475,6 +475,7 @@ fetch_metadata() {
         local artist=$(echo "$response" | jq -r '.now_playing.song.artist // "Unknown Artist"')
         local album=$(echo "$response" | jq -r '.now_playing.song.album // "Unknown Album"')
         local playlist=$(echo "$response" | jq -r '.now_playing.playlist // "Unknown Collection"')
+        # API returns seconds directly
         local duration=$(echo "$response" | jq -r '.now_playing.duration // 0')
         local elapsed=$(echo "$response" | jq -r '.now_playing.elapsed // 0')
         local remaining=$(echo "$response" | jq -r '.now_playing.remaining // 0')
@@ -867,6 +868,7 @@ load_settings() {
     else
         VOLUME=80
         SAVE_SETTINGS=true
+        TYPEWRITER_MODE=true
     fi
 }
 
@@ -875,6 +877,7 @@ save_settings() {
         cat > "$SETTINGS_FILE" << EOF
 VOLUME=$VOLUME
 SAVE_SETTINGS=$SAVE_SETTINGS
+TYPEWRITER_MODE=$TYPEWRITER_MODE
 EOF
     fi
 }
@@ -962,6 +965,14 @@ show_startup_menu() {
         
         read -rsn1 key
         
+        # Handle arrow keys (escape sequences: \e[A, \e[B)
+        if [ "$key" = $'\e' ]; then
+            read -rsn1 -t 0.1 key
+            if [ "$key" = "[" ]; then
+                read -rsn1 -t 0.1 key
+            fi
+        fi
+        
         case "$key" in
             "")
                 clear
@@ -1010,20 +1021,31 @@ show_volume_menu() {
         printf "%${empty}s" "" | tr ' ' '░'
         printf "]${NC}"
         
-        tput cup $((rows / 2 + 4)) $((cols / 2 - 12))
-        echo "↑/↓: Adjust | s: Save | b: Back"
+        tput cup $((rows / 2 + 4)) $((cols / 2 - 14))
+        echo "Arrow Up/Down: Adjust"
+        tput cup $((rows / 2 + 5)) $((cols / 2 - 10))
+        echo "s: Save | q: Back"
         
+        flush_input
         read -rsn1 key
+        # Handle arrow keys (escape sequences: \e[A, \e[B)
+        if [ "$key" = $'\e' ]; then
+            read -rsn1 -t 0.1 key
+            if [ "$key" = "[" ]; then
+                read -rsn1 -t 0.1 key
+            fi
+        fi
+        
         case "$key" in
-            "A"|"a") [ $VOLUME -lt 100 ] && VOLUME=$((VOLUME + 5)) ;;
-            "B"|"b") [ $VOLUME -gt 0 ] && VOLUME=$((VOLUME - 5)) ;;
+            "A") [ $VOLUME -lt 100 ] && VOLUME=$((VOLUME + 5)) ;;
+            "B") [ $VOLUME -gt 0 ] && VOLUME=$((VOLUME - 5)) ;;
             "s"|"S") 
                 save_settings
+                tput cup $((rows / 2 + 6)) $((cols / 2 - 10))
                 echo -e "${GREEN}Settings saved!${NC}"
                 sleep 1
                 ;;
-            ""|"b"|"B") return ;;
-            "q"|"Q") exit 0 ;;
+            ""|"q"|"Q") return ;;
         esac
     done
 }
@@ -1043,12 +1065,38 @@ show_settings_menu() {
         tput cup $((rows / 2 - 1)) $((cols / 2 - 12))
         echo "Volume: ${VOLUME}%"
         
-        tput cup $((rows / 2 + 2)) $((cols / 2 - 18))
-        echo "t: Toggle Auto-save | v: Volume"
-        tput cup $((rows / 2 + 3)) $((cols / 2 - 10))
-        echo "Enter/b: Back"
+        local tw_label
+        if $TYPEWRITER_MODE; then
+            tw_label="ON"
+        else
+            tw_label="OFF"
+        fi
+        tput cup $((rows / 2 + 1)) $((cols / 2 - 15))
+        if $TYPEWRITER_MODE; then
+            echo -e "Typewriter: ${GREEN}${tw_label}${NC}"
+        else
+            echo -e "Typewriter: ${RED}${tw_label}${NC}"
+        fi
         
+        tput cup $((rows / 2 + 3)) $((cols / 2 - 16))
+        echo "t: Toggle Auto-save"
+        tput cup $((rows / 2 + 4)) $((cols / 2 - 12))
+        echo "v: Set Volume"
+        tput cup $((rows / 2 + 5)) $((cols / 2 - 14))
+        echo "w: Toggle Typewriter"
+        tput cup $((rows / 2 + 6)) $((cols / 2 - 10))
+        echo "q: Back to Menu"
+        
+        flush_input
         read -rsn1 key
+        # Handle arrow keys (consume escape sequence)
+        if [ "$key" = $'\e' ]; then
+            read -rsn1 -t 0.1 key
+            if [ "$key" = "[" ]; then
+                read -rsn1 -t 0.1 key
+            fi
+        fi
+        
         case "$key" in
             "t"|"T") 
                 if [ "$SAVE_SETTINGS" = true ]; then
@@ -1059,7 +1107,15 @@ show_settings_menu() {
                 fi
                 ;;
             "v"|"V") show_volume_menu ;;
-            ""|"b"|"B"|"q"|"Q") return ;;
+            "w"|"W") 
+                if $TYPEWRITER_MODE; then
+TYPEWRITER_MODE=true
+                else
+                    TYPEWRITER_MODE=true
+                fi
+                save_settings
+                ;;
+            ""|"q"|"Q") return ;;
         esac
     done
 }
@@ -1183,13 +1239,12 @@ display_track_info() {
             LAST_ALBUM="$album"
             LAST_PLAYLIST="$playlist"
             LAST_DURATION=$duration
-        fi
-        
-        # Always update the progress display
-        if [[ "$duration" =~ ^[0-9]+$ ]] && [ "$duration" -gt 0 ]; then
-            # Show progress on the same line
-            printf "\r\033[K"  # Clear current line
-            draw_progress_bar $elapsed $duration "Now Playing" "GREEN"
+            
+            # Show progress bar once when track changes
+            if [[ "$duration" =~ ^[0-9]+$ ]] && [ "$duration" -gt 30 ]; then
+                # Only show progress for tracks longer than 30 seconds
+                draw_progress_bar $elapsed $duration "Now Playing" "GREEN"
+            fi
         fi
     fi
 }
@@ -1198,10 +1253,12 @@ display_track_info() {
 echo -e "${CYAN}Loading track information...${NC}"
 # Command help function
 show_help() {
-    local remaining=$RAMEN_TIMER_DURATION
+    local remaining=0
+    if $TIMER_RUNNING; then
+        remaining=$((TIMER_START + TIMER_DURATION - $(date +%s)))
+    fi
     local timer_status
     if [ $remaining -gt 0 ]; then
-        [ $remaining -lt 0 ] && remaining=0
         timer_status="Running - $(format_duration $remaining) left"
     else
         timer_status="Not running"
@@ -1244,6 +1301,7 @@ show_help() {
     echo -e "${CYAN}╚${horiz}╝${NC}"
     
     type_print "${YELLOW}Press any key to return to the player...${NC}"
+    flush_input
     read -n 1 -s
     NO_CLEAR=true
     flush_input
@@ -1281,6 +1339,7 @@ show_info() {
     echo -e "${CYAN}╚${horiz}╝${NC}"
     
     type_print "${YELLOW}Press any key to return to the player...${NC}"
+    flush_input
     read -n 1 -s
     flush_input
 }
@@ -1344,9 +1403,25 @@ while kill -0 $PID 2>/dev/null; do
         update_timer_display
     fi
     
-    read -n 1 -s -t $READ_TIMEOUT key
+    # Flush input buffer first for responsive controls
+    flush_input
+    
+    # Use shorter timeout for more responsive input
+    read -n 1 -s -t 0.1 key
     if [ -z "$key" ]; then
         continue
+    fi
+    
+    # Handle arrow keys (escape sequences: \e[A, \e[B, \e[C, \e[D)
+    if [ "$key" = $'\e' ]; then
+        read -rsn1 -t 0.1 key
+        if [ "$key" = "[" ]; then
+            read -rsn1 -t 0.1 key
+            # Arrow key detected, ignore for now (could map to prev/next track later)
+            continue
+        else
+            continue
+        fi
     fi
 
     LAST_CMD="$key"
