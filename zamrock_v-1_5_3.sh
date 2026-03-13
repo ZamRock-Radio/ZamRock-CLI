@@ -4,10 +4,26 @@
 command -v ffplay >/dev/null 2>&1 || { echo "ffplay is required but it's not installed. Aborting." >&2; exit 1; }
 command -v ffmpeg >/dev/null 2>&1 || { echo "ffmpeg is required but it's not installed. Aborting." >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "curl is required but it's not installed. Aborting." >&2; exit 1; }
-command -v jq >/dev/null 2>&1 || { echo "jq is required but it's not installed. Aborting." >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "jq is required but it's not installed. Aborting." >&2: exit 1; }
 
-# Audio URL to play
-AUDIO_URL="https://wild-haze-hifi.deathsmack-a51.workers.dev"
+# Stream options
+declare -A STREAMS
+STREAMS["main"]="https://divine-paper-3624.deathsmack-a51.workers.dev"
+STREAMS["hifi"]="https://wild-haze-hifi.deathsmack-a51.workers.dev"
+
+declare -A STREAM_NAMES
+STREAM_NAMES["main"]="Standard (MP3 128k)"
+STREAM_NAMES["hifi"]="HiFi (AAC 320k)"
+
+declare -A STREAM_DESC
+STREAM_DESC["main"]="Best compatibility • Works everywhere • Lower bandwidth"
+STREAM_DESC["hifi"]="Premium quality • Richer sound • Needs more bandwidth"
+
+# Default stream
+DEFAULT_STREAM="main"
+
+# Audio URL (will be set based on saved selection)
+AUDIO_URL="${STREAMS[$DEFAULT_STREAM]}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECORD_DIR="$SCRIPT_DIR/ZamRock Recordings"  # Directory to save recordings
 API_URL="https://icy-voice-api.deathsmack-a51.workers.dev"  # AzuraCast API endpoint
@@ -877,6 +893,14 @@ load_settings() {
         VOLUME=80
         SAVE_SETTINGS=true
         TYPEWRITER_MODE=true
+        STREAM_SELECTION="main"
+    fi
+    # Set AUDIO_URL based on saved stream selection
+    if [ -n "$STREAM_SELECTION" ] && [ -n "${STREAMS[$STREAM_SELECTION]}" ]; then
+        AUDIO_URL="${STREAMS[$STREAM_SELECTION]}"
+    else
+        AUDIO_URL="${STREAMS[$DEFAULT_STREAM]}"
+        STREAM_SELECTION="$DEFAULT_STREAM"
     fi
 }
 
@@ -886,6 +910,7 @@ save_settings() {
 VOLUME=$VOLUME
 SAVE_SETTINGS=$SAVE_SETTINGS
 TYPEWRITER_MODE=$TYPEWRITER_MODE
+STREAM_SELECTION=$STREAM_SELECTION
 EOF
     fi
 }
@@ -1107,36 +1132,58 @@ show_settings_menu() {
         cols=$(tput cols 2>/dev/null || echo 80)
         
         clear
-        tput cup $((rows / 2 - 6)) $((cols / 2 - 10))
-        echo -e "${YELLOW}Settings${NC}"
         
-        tput cup $((rows / 2 - 3)) $((cols / 2 - 15))
-        [ "$SAVE_SETTINGS" = true ] && echo -e "Auto-save: ${GREEN}Enabled${NC}" || echo -e "Auto-save: ${RED}Disabled${NC}"
+        local box_width=60
+        local box_start=$(( (cols - box_width) / 2 ))
+        [ $box_start -lt 1 ] && box_start=1
         
-        tput cup $((rows / 2 - 1)) $((cols / 2 - 12))
-        echo "Volume: ${VOLUME}%"
+        local inner=$((box_width - 2))
+        local border=$(repeat_char "─" $inner)
         
+        tput cup 3 $box_start
+        echo -e "${CYAN}╔${border}╗${NC}"
+        tput cup 4 $box_start
+        echo -e "${CYAN}║${NC}  ${YELLOW}Settings${NC}"
+        tput cup 5 $box_start
+        echo -e "${CYAN}╠${border}╣${NC}"
+        
+        # Auto-save
+        tput cup 6 $box_start
+        local save_status
+        [ "$SAVE_SETTINGS" = true ] && save_status="${GREEN}Enabled${NC}" || save_status="${RED}Disabled${NC}"
+        echo -e "${CYAN}║${NC}  Auto-save:  $save_status"
+        
+        # Volume
+        tput cup 7 $box_start
+        echo -e "${CYAN}║${NC}  Volume:     ${VOLUME}%"
+        
+        # Typewriter
+        tput cup 8 $box_start
         local tw_label
-        if $TYPEWRITER_MODE; then
-            tw_label="ON"
-        else
-            tw_label="OFF"
-        fi
-        tput cup $((rows / 2 + 1)) $((cols / 2 - 15))
-        if $TYPEWRITER_MODE; then
-            echo -e "Typewriter: ${GREEN}${tw_label}${NC}"
-        else
-            echo -e "Typewriter: ${RED}${tw_label}${NC}"
-        fi
+        $TYPEWRITER_MODE && tw_label="${GREEN}ON${NC}" || tw_label="${RED}OFF${NC}"
+        echo -e "${CYAN}║${NC}  Typewriter: $tw_label"
         
-        tput cup $((rows / 2 + 3)) $((cols / 2 - 16))
-        echo "t: Toggle Auto-save"
-        tput cup $((rows / 2 + 4)) $((cols / 2 - 12))
-        echo "v: Set Volume"
-        tput cup $((rows / 2 + 5)) $((cols / 2 - 14))
-        echo "w: Toggle Typewriter"
-        tput cup $((rows / 2 + 6)) $((cols / 2 - 10))
-        echo "b: Back to Menu"
+        tput cup 9 $box_start
+        echo -e "${CYAN}╠${border}╣${NC}"
+        
+        # Current Stream
+        tput cup 10 $box_start
+        local stream_name="${STREAM_NAMES[$STREAM_SELECTION]}"
+        local stream_desc="${STREAM_DESC[$STREAM_SELECTION]}"
+        echo -e "${CYAN}║${NC}  ${YELLOW}Stream:${NC} $stream_name"
+        tput cup 11 $box_start
+        echo -e "${CYAN}║${NC}  $stream_desc"
+        
+        tput cup 12 $box_start
+        echo -e "${CYAN}╠${border}╣${NC}"
+        
+        # Shortcuts
+        tput cup 13 $box_start
+        echo -e "${CYAN}║${NC}  ${CYAN}t:${NC} Auto-save  ${CYAN}v:${NC} Volume  ${CYAN}w:${NC} Typewriter"
+        tput cup 14 $box_start
+        echo -e "${CYAN}║${NC}  ${CYAN}s:${NC} Change Stream  ${CYAN}b:${NC} Back"
+        tput cup 15 $box_start
+        echo -e "${CYAN}╚${border}╝${NC}"
         
         flush_input
         read -rsn1 key
@@ -1164,6 +1211,15 @@ show_settings_menu() {
                 else
                     TYPEWRITER_MODE=true
                 fi
+                save_settings
+                ;;
+            "s"|"S")
+                if [ "$STREAM_SELECTION" = "main" ]; then
+                    STREAM_SELECTION="hifi"
+                else
+                    STREAM_SELECTION="main"
+                fi
+                AUDIO_URL="${STREAMS[$STREAM_SELECTION]}"
                 save_settings
                 ;;
             ""|"b"|"B"|$'\e') return ;;
@@ -1228,6 +1284,11 @@ LAST_ASCII_TIME=$(date +%s)
 
 # Set default volume if not set
 [ -z "$VOLUME" ] && VOLUME=80
+
+# Show which stream is playing
+if [ -n "$STREAM_SELECTION" ] && [ -n "${STREAM_NAMES[$STREAM_SELECTION]}" ]; then
+    echo -e "${YELLOW}Now playing: ${STREAM_NAMES[$STREAM_SELECTION]}${NC}"
+fi
 
 # Start playback with ffplay
 TMP_LOG=$(mktemp)
@@ -1560,6 +1621,21 @@ while kill -0 $PID 2>/dev/null; do
             ;;
         "n")
             show_logo_and_now_playing
+            metadata=$(fetch_metadata)
+            if [ -n "$metadata" ]; then
+                IFS='|' read -r song_title artist album playlist duration elapsed remaining <<< "$metadata"
+                LAST_STREAM_TITLE="$song_title"
+                LAST_ARTIST="$artist"
+                LAST_ALBUM="$album"
+                LAST_PLAYLIST="$playlist"
+                LAST_DURATION=$duration
+                
+                if [[ "$duration" =~ ^[0-9]+$ ]] && [ "$duration" -gt 30 ]; then
+                    draw_progress_bar $elapsed $duration "Now Playing" "GREEN"
+                    echo
+                    echo -e "[h: help | m: menu | q: quit]"
+                fi
+            fi
             ;;
         "b"|"B")
             show_logo_and_now_playing
