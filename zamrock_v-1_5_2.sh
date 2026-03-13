@@ -44,6 +44,7 @@ TYPEWRITER_MODE=true
 TYPEWRITER_DELAY=0.03
 FFMPEG_PID=0
 VOLUME=80
+DRAWING_IN_PROGRESS=false
 
 strip_ansi() {
     printf '%s' "$1" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g'
@@ -64,6 +65,8 @@ type_print() {
     local parsed
     printf -v parsed "%b" "$text"
     if $TYPEWRITER_MODE; then
+        # Disable terminal echo to ignore key presses during printing
+        stty -echo 2>/dev/null
         local i=0
         local len=${#parsed}
         local delay="${custom_delay:-$TYPEWRITER_DELAY}"
@@ -87,6 +90,8 @@ type_print() {
             sleep "$delay"
             i=$((i+1))
         done
+        # Restore terminal echo
+        stty echo 2>/dev/null
         if [ "$newline" = "true" ]; then
             printf "\n"
         fi
@@ -887,6 +892,7 @@ EOF
 
 # Startup Menu
 show_startup_menu() {
+    DRAWING_IN_PROGRESS=true
     # Hide cursor
     tput civis
     
@@ -897,6 +903,9 @@ show_startup_menu() {
     local selected=0
     local num_items=${#menu_items[@]}
     local menu_drawn=false
+    
+    # Clear any keys pressed before showing menu
+    flush_input
     
     load_settings
     
@@ -976,6 +985,7 @@ show_startup_menu() {
             done
             
             menu_drawn=true
+            DRAWING_IN_PROGRESS=false
         fi
         
         read -rsn1 key
@@ -1298,6 +1308,7 @@ display_track_info() {
 echo -e "${CYAN}Loading track information...${NC}"
 # Command help function
 show_help() {
+    DRAWING_IN_PROGRESS=true
     local remaining=0
     if $TIMER_RUNNING; then
         remaining=$((TIMER_START + TIMER_DURATION - $(date +%s)))
@@ -1326,6 +1337,9 @@ show_help() {
         horiz="${horiz}─"
     done
 
+    # Clear any keys pressed during playback
+    flush_input
+    
     # Print help menu with typewriter (horizontal lines fast)
     type_print "" 
     type_print "${CYAN}╔${horiz}╗${NC}" "" 0.002
@@ -1337,7 +1351,7 @@ show_help() {
     type_print "${CYAN}║${NC}  i  ZamRock info & links"
     type_print "${CYAN}║${NC}  l  Search lyrics"
     type_print "${CYAN}║${NC}  n  Show logo & now playing"
-    type_print "${CYAN}║${NC}  m  Return to menu"
+    type_print "${CYAN}║${NC}  b  Return to player"
     type_print "${CYAN}║${NC}  t  Toggle typewriter ($typewriter_label)"
     type_print "${CYAN}║${NC}  h  This help menu"
     type_print "${CYAN}║${NC}  q  Quit"
@@ -1347,15 +1361,14 @@ show_help() {
     type_print "${CYAN}║${NC}  Timer:      $timer_status"
     type_print "${CYAN}╚${horiz}╝${NC}" "" 0.002
     
-    type_print "${YELLOW}Press any key to return to the player...${NC}"
-    flush_input
-    read -n 1 -s
-    NO_CLEAR=true
-    flush_input
+    echo
+    echo -e "${YELLOW}Press b to return to player, or any key for command...${NC}"
+    DRAWING_IN_PROGRESS=false
 }
 
 # Function to display information about ZamRock
 show_info() {
+    DRAWING_IN_PROGRESS=true
     flush_input
     
     local term_width=$(tput cols 2>/dev/null || echo 80)
@@ -1385,10 +1398,9 @@ show_info() {
     echo -e "${CYAN}║${NC}  Album:      ${LAST_ALBUM:-Unknown Album}"
     echo -e "${CYAN}╚${horiz}╝${NC}"
     
-    type_print "${YELLOW}Press any key to return to the player...${NC}"
-    flush_input
-    read -n 1 -s
-    flush_input
+    echo
+    echo -e "${YELLOW}Press b to return to player, or any key for command...${NC}"
+    DRAWING_IN_PROGRESS=false
 }
 
 cleanup() {
@@ -1452,11 +1464,14 @@ while kill -0 $PID 2>/dev/null; do
         update_timer_display
     fi
     
-    # Flush input buffer first for responsive controls
-    flush_input
+    # Skip input while drawing menus to avoid key conflicts
+    if $DRAWING_IN_PROGRESS; then
+        sleep 0.1
+        continue
+    fi
     
     # Use shorter timeout for more responsive input
-    read -n 1 -s -t 0.1 key
+    read -n 1 -s -t 0.3 key
     if [ -z "$key" ]; then
         continue
     fi
@@ -1515,11 +1530,13 @@ while kill -0 $PID 2>/dev/null; do
             enter_interactive_mode
             show_info
             exit_interactive_mode
+            flush_input
             ;;
         "h")
             enter_interactive_mode
             show_help
             exit_interactive_mode
+            flush_input
             ;;
         "l")
             show_logo_and_now_playing
@@ -1540,6 +1557,9 @@ while kill -0 $PID 2>/dev/null; do
             exit_interactive_mode
             ;;
         "n")
+            show_logo_and_now_playing
+            ;;
+        "b"|"B")
             show_logo_and_now_playing
             ;;
         "m"|"M")
