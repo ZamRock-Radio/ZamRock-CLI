@@ -1299,7 +1299,8 @@ display_track_info() {
             if [[ "$duration" =~ ^[0-9]+$ ]] && [ "$duration" -gt 30 ]; then
                 # Only show progress for tracks longer than 30 seconds
                 draw_progress_bar $elapsed $duration "Now Playing" "GREEN"
-                echo -e " ${YELLOW}(h: help | m: menu | q: quit)${NC}"
+                echo
+                echo -e "[h: help | m: menu | q: quit]"
             fi
         fi
     fi
